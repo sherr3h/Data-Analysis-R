@@ -1,0 +1,122 @@
+---
+title: "Testing Bernoulli Distribution in R"
+output:   github_document:
+    pandoc_args: --webtex
+---
+###Example
+For a random sample of size $n = 20, X = (X_1, . . . , X_n)$ is a sequnce of Bernoulli trials with unknown success probability p.
+
+Find the test with the best critical region, that is, find the most powerful test, with significance level $α = 0.05$, for testing the simple null hypothesis $H_0: p = 0.2$ against the simple alternative hypothesis $H_1: p = 0.3$.
+
+###The Neyman Pearson Lemma
+Suppose we have a random sample $X_1, ..., X_n$ from a probability distribution with parameter θ. Then, if C is a critical region of size α and k is a constant such that:
+
+$\frac{L(θ_0)}{L(θ_1)}≤ k$ inside  the  critical  region  C, 
+
+and 
+
+$\frac{L(θ_0)}{L(θ_1)}≥ k$ outside  the  critical  region  C,
+
+then C is the best, that is, most powerful, critical region for testing the simple null hypothesis  $H_0: θ = θ_0$  against the simple alternative hypothesis  $H_1: θ = θ_1$ .
+    
+###Solution 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+By the Neyman Pearson Lemma, the ratio of the likelihoods under the null and alternative must be less than some constant k:
+$$\frac{L(0.2)}{L(0.3)} = \frac{0.2^y 0.8^{n-y}}{0.3^y0.7^{n-y}}≤ k$$
+where $y$ is the number of succeessful events.
+
+Simplifying, we get:
+
+$$(\frac{2}{3})^n(\frac{8}{7})^{n-y} ≤ k $$
+Taking the natural logarithm of both sides of the inequality:
+$$n\log\frac{2}{3} + ({n-y})\log\frac{8}{7} ≤ \log k $$
+Moving the constant terms to one side of the inequality:
+$$ y ≥ n - \log\frac{7}{8}(\log k - n\log\frac{2}{3})$$
+That is, the Neyman Pearson Lemma tells us that the rejection region for the most powerful test for testing H0: μ = 10 against HA: μ = 15, under the normal probability model, is of the form:
+
+$$ \hat{y}≥k^∗ $$
+where $k^*$ is selected so that the size of the critical region is $α = 0.05$, $\hat{y}$ is the observed number of succeessful events, $\hat{p} = \frac{\hat{y}}{n}$.
+
+Y is a $Bin(n, p)$ random variable with $E[Y] = p$, $var[Y] = np(1 − p)$.
+
+Under the null hypothesis, the p is normally distributed with mean $0.2*20=4$ and variation $20*0.2*0.8 = 3.2 $. Therefore, the critical value $k^*$ is $(4 + 1.645*\sqrt{3.2}) = 6.9$.
+
+```{r}
+qnorm(0.95, mean=4, sd=sqrt(3.2))
+```
+
+That is, by the Neyman Pearson Lemma, the rejection region for the most powerful test for testing $H_0: p = 0.2$ against $H_1: p = 0.3$ is:
+
+$$\hat{y} ≥ 6.9$$
+
+The power of such a test when p = 0.3 is:
+
+$$P(\hat{y} > 6.9 | p=0.3) = P(Z > \frac{6.9 - 20*0.3}{\sqrt{20*0.3*0.7}}) =  0.9967 $$
+```{r}
+1-pnorm((6.9-6)/sqrt(4.2), mean=6, sd=sqrt(4.2))
+```
+
+The Lemma tells us that there is no other test out there that will give us greater power for testing $H_0: p = 0.2$ against $H_1: p = 0.3$ .
+
+###The Bootstrapping Method
+Bootstrapping is a resampling method proposed by Efron in 1979 .
+
+It adresses the question of sampling distribution. In Bootsrapping, the original sample $X_1, · · · , X_n$ is considered as the population and $X^∗_1, · · · , X^∗_n$ is a random boostrap sample drawn with replacement. The idea is to estimate a desired property of a statistic, using an estimate of F i.e. distribution function of the original sample. 
+
+Apply the Bootstrap-t method. Given n and p, first draw a random sample of size n from
+$Bin(1, p)$, $X1, X2, ...., Xn$ and obtain a sample proportion $\hat{p}$. Then draw B bootstrap samples and compute
+$$Z^*=\frac{\hat{p^*}-\hat{p}}{\sqrt{var(\hat{p^*})}} $$
+where $\hat{p^*}$ is the bootstrap estimate of p, and $var(\hat{p^*})$ is the bootstrap  estimate of variance of p. 
+
+Then, estimate the $α$th percentile of $Z^*$ using the empirical cumulative distribution function denoted by $\hat{G_{Z∗}}$. 
+
+The boostrap-t confidence interval is
+$$(\hat{p}-G^{-1}_{Z∗}(0.975))\sqrt{var(\hat{p^*})},  \hat{p}-G^{-1}_{Z∗}(0.025))\sqrt{var(\hat{p^*})} )$$
+
+Generating one random sample of size 20 as the original data:
+
+```{r x_sample}
+set.seed(123)
+(x_sample <- runif(20) < 0.3)
+
+```
+
+Estimating p:
+
+```{r y}
+(y <- sum(x_sample == TRUE))    # number of successes
+n <- length(x_sample)
+(p <- y/n)   # MLE for p
+(se <- sqrt(p*(1-p)/n) )
+```
+
+Bootstrapping 10000 times from the original sample with replacement :
+
+```{r boot1}
+boot_sample <- replicate(10000, {
+    x_sample[sample(20, replace=TRUE) ]})
+
+boot_p <- colMeans(boot_sample)
+boot_se <- sqrt(boot_p*(1-boot_p)/n)
+```
+
+Plotting the pdf and ecdf of the pivot:
+
+```{r Fn}
+z <- (boot_p-p)/se
+hist(z, freq = FALSE)
+xfit <- seq(min(z), max(z), by=0.01) 
+yfit <- dnorm(xfit,mean=mean(z),sd=sd(z)) 
+lines(xfit, yfit, col="blue", lwd=1)
+
+```
+
+Forming a 95% confidence interval:
+
+```{r pivot.ci}
+(pivot.ci <- p - se * quantile(z,c(.975,.025)))
+```
+
+
