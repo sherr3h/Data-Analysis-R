@@ -1,1 +1,3 @@
-# DataAnalysis_R
+# Data Analysis in R
+
+I'm learning !
