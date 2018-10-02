@@ -1,0 +1,251 @@
+---
+    title: "Basic Technical Analysis with R"
+    output: word_document
+---
+    
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Version 0.1
+
+# 1 Introduction
+Technical analysis is an analysis methodology for forecasting the direction of prices through the study of past market data, primarily price and volume.
+It is "defined as the art of identifying trend changes at an early stage and to maintain an investment or trad- ing posture until the weight of the evidence indicates that the trend has reversed." 
+
+Two underlying assumptions of technical analysis:
+*    1)  Market price of a security at any given time accurately reflects all available information
+*    2)  Price changes are not random, leads to the belief of technical analysts that market trends, both short term and long term, can be identified
+    
+This case study will conduct technical analysis using package "quantmod" and "TTR", and calculate Simple Moving Average (SMA), Exponential Moving Average (EMA), Bollinger Bands (BBands), RSI, and MACD technical analysis indicators.
+    
+# 2 Extracting data
+There're many sources of stock data, eg. Yahoo! Finance (https://finance.yahoo.com/) , Google Finance (https://www.google.com/finance), Bloomberg, Thomson Reuters.
+
+Install the packages before the first time using it.
+
+``` {r start, message = FALSE}
+# Get quantmod
+#install.packages("quantmod")
+library(quantmod)
+#install.packages("TTR")
+library(TTR)
+start <- as.Date("2016-01-01")
+end <- as.Date("2018-07-31")
+```
+
+Take HSBC Holdings plc stock data as an example. It's ticker symbol is 0005.HK. 
+
+Use the function getSymbols(), pass a string as a first argument as the desired ticker symbol, pass 'yahoo' to src, and from and to specify date ranges.
+
+```{r, message = FALSE }
+HSBC <-  getSymbols("0005.HK", src = "yahoo", auto.assign=FALSE, from = start, to = end)
+#getSymbols("AAPL", src = "yahoo", from = start, to = end)
+```
+
+For stocks in the NYSE, the tickers start with letters, and the data will be named automatically after the ticker symbol of the security retrieved, say Google with the ticker "GOOG", Apple with "AAPL". But for HK stocks whose ticker starts with a number , we have to use the argument "auto.assign=FALSE," and give the object a name starting with a letter.
+
+Explore around:
+```{r }
+class(HSBC)
+head(HSBC)
+```
+
+getSymbols() created in the global environment an object named HSBC, of the xts class. xts objects (provided in the xts package) are for storing time series data. They allow for time-based indexing and provide custom attributes. The different series are the columns of the object, with the name of the associated security (here, HSBC) being prefixed to the corresponding series.
+To read more about the xts object: https://cran.r-project.org/web/packages/xts/vignettes/xts.pdf
+
+Each security has six series of data. 
+* Open: the price of the stock at the beginning of the trading day 
+* High: the highest price of the stock on that trading day
+* Low: the lowest price of the stock on that trading day
+* Close: the price of the stock at closing time
+* Volume: number of stocks traded
+* Adjusted close (adjusted): the closing price of the stock that adjusts the price of the stock for corporate actions. Stock prices are set mostly by traders in the market. Yet, stock splits, for example, when the company makes each extant stock worth two and halves the price, and dividends also affect the price of a stock.
+
+#3 Charting & Intepretation
+Plotting one series of data:
+```{r }
+plot(HSBC[, "0005.HK.Close"], main = "0005.HK Close price")
+barChart(HSBC[, "0005.HK.Close"])
+```
+
+There are at least 4 variables for each date (open, high, low, and close), one way to visualize all is the Japanese candlestick plot. Use the function candleChart().
+```{r}
+candleChart(HSBC, up.col = "black", dn.col = "red", theme = "white")
+```
+
+In the candlestick chart, a black candlestick indicates a day where the closing price was higher than the open (a gain), while a red candlestick indicates a day where the open was higher than the close (a loss). The wicks indicate the high and the low, and the body the open and close (hue is used to determine which end of the body is the open and which the close). 
+
+##Simple Moving Averages
+Moving averages smooth the price data to form a trend following indicator. They do not predict price direction, but rather define the current direction with a lag. Moving averages lag because they are based on past prices. Despite this lag, moving averages help smooth price action and filter out the noise.
+
+A q-day simple moving average is, for a series $x_t$ and a point in time t, the average of the past  q days: that is, if $MA^q_t$ denotes a moving average process, then:
+$$MA^q_t = \frac{1}{q} \sum_{i = 0}^{q-1} x_{t - i}$$
+
+Moving averages smooth a time series and helps identify trends. The larger q is, the less responsive a moving average process is to short-term fluctuations in the series x_t. 
+
+Use the addSMA() function to add moving averages to charts.
+
+Traders are usually interested in multiple moving averages, such as the 20-day, 50-day, and 100-day moving averages. It’s easy to examine multiple moving averages at once.
+```{r }
+candleChart(HSBC, up.col = "black", dn.col = "red", theme = "white", TA="addSMA(n=c(20, 50, 100))")
+```
+
+The 20-day moving average is the most sensitive to local changes, and the 100-day moving average the least. 
+
+Notice how late the rolling average begins. It cannot be computed until 20/50/100 days have passed. This limitation becomes more severe for longer moving averages.
+
+Here, the 100-day moving average indicates an overall bearish trend: the stock is trending downward over time. The 20-day moving average is at times bearish and at other times bullish, where a negative swing is expected. The crossing of moving average lines indicate changes in trend. These crossings are what we can use as trading signals, or indications that a financial security is changing direction and a profitable trade might be made.
+
+##EMA - Exponential Moving Average 
+
+Exponential moving averages (EMAs) reduce the lag by applying more weight to recent prices. The weighting applied to the most recent price depends on the number of periods in the moving average.
+
+3 steps to calculating an exponential moving average (EMA):
+* 1. Calculate the simple moving average for the initial EMA value. An exponential moving average (EMA) has to start somewhere, so a simple moving average is used as the previous period's EMA in the first calculation. 
+* 2. Calculate the weighting multiplier. 
+* 3. Calculate the exponential moving average for each day between the initial EMA value and today, using the price, the multiplier, and the previous period's EMA value. The formula below is for a 10-day EMA.
+
+Initial SMA = 10-period sum / 10 
+
+Multiplier = (2 / (Time periods + 1) ) = (2 / (10 + 1) ) = 0.1818 (18.18%)
+
+EMA = {Close - EMA(previous day)} x multiplier + EMA(previous day).
+
+##Boilling Bands
+
+##RSI – Relative Strength Indicator
+Developed by J. Welles Wilder and introduced in his 1978 book, New Concepts in Technical Trading Systems, the Relative Strength Index (RSI) is an extremely useful and popular momentum oscillator. 
+
+The RSI compares the magnitude of a stock's recent gains to the magnitude of its recent losses and turns that information into a number that ranges from 0 to 100. It takes a single parameter, the number of time periods to use in the calculation. In his book, Wilder recommends using 14 periods.
+
+It is calculated as:
+$$RSI = 100 - \frac{100}{1+RS}\ $$
+Average Gain (Loss) = Total Gain (Loss) / n
+First RS = Average Gain / Average Loss
+Somoothed RS = 
+[(previous Average Gain) x 13 + Current Gain] / [(previous Average Loss) x 13 + Current Loss] 
+n = Number of RSI periods
+```{r rsi14}
+rsi14 = RSI(HSBC[, "0005.HK.Close"], n=14)
+head(rsi14, n=20)
+```
+
+##MACD - Moving average convergence divergence 
+The MACD is developed by Gerald Appel in 1970s and is one of the simplest and most effective momentum indicators. 
+
+It is a trend-following momentum indicator that shows the relationship between two moving averages of prices. Calculated by:
+
+MACD Line: (12-day EMA - 26-day EMA)
+Signal Line: 9-day EMA of MACD Line
+MACD Histogram: MACD Line - Signal Line
+
+Let’s calculate a standard (12,26,9) MACD indicator using this function.
+```{r macd}
+macd = MACD(HSBC[, "0005.HK.Close"], nFast=12, nSlow=26, nSig=9, maType=SMA)
+head(macd, n=30)
+```
+
+As a matter of fact, it is simple to add dozens of technical analysis tools using the R packages.
+Use the chartSeries() function and add the indicators in the "TA" argument.
+```{r }
+chartSeries(HSBC, TA="addSMA();addEMA();addRSI();addMACD()") 
+```
+
+To take a closer look, plot a subset of the data:
+```{r }
+reChart(major.ticks='months',subset='first 16 weeks') 
+```
+
+#4 Forming Trading Strategy Using Technical Analysis
+Traders look for signal line crossovers, divergence and divergences to generate signals. 
+
+* Crossovers: A crossover is the most basic type of signal. One common crossover is when the price of an asset moves from one side of a moving average and closes on the other. Price crossovers can be used as a basic entry or exit strategy. 
+For example, when the SMA crosses the candlechart of a day from the above, it's a buy sign. (Chart)
+
+* Divergence
+* Dramatic Rise
+
+
+Technical analysis can be used to formulate trading strategies.
+
+A trading strategy should include:
+* A set of rules determining how much money she is willing to bet on any single trade. Say, under no circumstances will a trader risk more than 20% of her portfolio on a trade. 
+* An **exit strategy**, a set of conditions deciding when to exit the position. 
+* A target: A trader may set a target, say the **minimum profit** that will trigger the trader to leave the position. Likewise, a trader must have a **maximum loss** she is willing to tolerate; if potential losses go beyond this floor, she will exit the position in order to prevent any further loss. This is usually done by setting a **stop-loss order**.
+
+Now let's design and evaluate a trading strategy that use trading signals for prompting trades, a rule for deciding how much of the money / portoflio to risk on any particular strategy, and a complete exit strategy. 
+
+Suppose that the amount of money in any particular trade is a fixed proportion of the portfolio; use 10% here. Also suppose that if losses exceed 20% of the value of the trade, exit the position. Now we need an approach to decide when to enter or exit the position for a profit. We'll go for the moving average crossover strategy here.
+
+Use two moving averages. The one with shorter days (q) is the "fast" one, and the other “slow”. The strategy is:
+
+* Trade the asset when the fast MA crosses over the slow MA.
+* Exit the trade when the fast MA crosses over the slow MA again.
+
+A long trade will be prompted when the fast moving average crosses from below to above the slow moving average, and the trade will be exited when the fast moving average crosses below the slow moving average later. A short trade will be prompted when the fast moving average crosses below the slow moving average, and the trade will be exited when the fast moving average later crosses above the slow moving average.
+
+Let's get back to the moving average graph.
+??or change an equity
+```{r HSBC_SMA_20}
+HSBC_SMA_20 <- SMA( Cl(HSBC), n=20)
+HSBC_SMA_50 <- SMA( Cl(HSBC), n=50)
+HSBC_SMA_200 <- SMA( Cl(HSBC), n=200)
+candleChart(HSBC, subset='2018', up.col = "black", dn.col = "red", theme = "white", TA="addSMA(n=c(20, 50, 200),with.col=Cl)")
+```
+
+The sign of this difference is called the regime. If the fast moving average is above the slow moving average, this is a bullish regime, and a bearish regime the other way around. 
+```{r HSBC_trade}
+HSBC_trade <- HSBC
+HSBC_trade$`20d` <- HSBC_SMA_20
+HSBC_trade$`50d` <- HSBC_SMA_50
+
+regime_val <- sign(HSBC_SMA_20 - HSBC_SMA_50)
+
+plot(regime_val["2018"], main = "Regime", ylim = c(-2, 2))
+plot(regime_val, main = "Regime", ylim = c(-2, 2))
+
+table(as.vector(regime_val))
+```
+
+The table above indicates that the market was bullish on HSBC stock for  `r 369` days, and bearish for `r 218` days.
+
+Regime changes signals trading opportunities. When a bullish/bearish regime begins, a buy/sell signal is triggered, and when it ends, a sell/buy signal is triggered. 
+
+To obtain signals, calculate the lagged difference of the regimes:
+```{r }
+signals <- diff(regime_val,lag = 1) /2
+plot(sig, main = "Trading Signal - 0005.HK", ylim = c(-2, 2))
+table(signals)
+```
+
+This indicates that a trader using this strategy would buy HSBC HK stock 9 times and sell 9 times. If a trader only goes long on HSBC stock, only 9 trades will be engaged in over the 19-month period. While if she pivots from a long to a short position every time a long position is terminated, there will be 18 trades total. 
+Note that trading more frequently isn’t necessarily good, as trades are never free.
+
+Check out the prices of the stock at each long and short.
+```{r }
+Cl(HSBC)[which(signals==1)]
+Cl(HSBC)[which(signals==-1)]
+#Calculating profit:
+as.vector(Cl(HSBC)[signals == 1])[-1] - Cl(HSBC)[signals == -1][-table(signals)[["1"]]]
+```
+
+#5 More on Technical Analysis - The Dow Theory 
+The Dow Theory was developed by Charles Dow, a journalist, founder of The Wall Street Journal and co-founder of Dow Jones and Company. It identifies and signals the change in stock market trends and is useful for trading and investing.
+
+The Dow Theory has six components:
+
+* The markets have three basic movements. Including: Primary trend, Secondary trend, Minor trend, defining by the reaction time and duration time of an event 
+* The market trends have three phases: Accumulation phase, Public participation phase, Distribution or panic phase
+* Stock prices reflect all news. As soon as the information is available in the market, the information is reflected in the share prices.
+* Financial market indexes should agree with each other. T
+The average of the indexes—like the industrial average or railroads’ average—should confirm each other in the same direction. It means when the economy is improving, the industry’s profit will increase because of the increased consumption. That's when the indexeds come into play.
+* Market trends should be confirmed by volume.
+* Market trends reverse after giving strong signals.
+
+
+
+
+#6 Limitation?
+* Technical Indicators tend to give mixed signals in some cases if they are used in isolation. In such a scenario, one indicator could show a buy signal, while the other could show a sell signal. This could confuse traders. To overcome such issues, traders generally use a combination of indicators, patterns, volume signals and moving averages to determine entry and exit signals.
+* Dependence on historical data: A large amount of historical data is needed to form good analysis. It won’t work on newly listed companies. Price that you see is usually after the story had taken place.
+
